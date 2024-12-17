@@ -142,7 +142,7 @@ namespace alloc
 				m_memcpy(heap, &heap[old_size], old_size);
 				//m_memset(&heap[old_size], 0, new_size - old_size); no need memset in mem_free()
 #else
-				memmove_s(heap, old_size, &heap[old_size], old_size); // бля ваще я тупой тут крч у нас не с начала массива а с конца массива я дебил индексы список != массив
+				memmove_s(heap, old_size, &heap[old_size], old_size); 
 				//memset(&heap[old_size], 0, 20);//new_size - old_size
 				//memset((void*)heap, 0, 20);//new_size - old_size
 				heap[8] = 2;
