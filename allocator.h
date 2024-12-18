@@ -171,7 +171,7 @@ namespace alloc
 				}
 				
 #if defined _M_IX86 && defined _MSC_VER
-				if (check != 0)
+				if (check != 1)
 				{
 					m_memcpy
 					(
