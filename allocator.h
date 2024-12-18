@@ -15,21 +15,26 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <ostream>
+#include <iostream>
+#include "queue.h"
 #elif defined _MSC_VER
 
 #else
-error("Compiler of gcc or msc");
+#error("Compiler of gcc or msc");
 #endif
 
 #ifndef ALLOCATED_CAPACITY
 #define ALLOCATED_CAPACITY 10000
 #endif
 
+#define BYTES(x) x * sizeof(x)
+
 
 namespace alloc
 {
 #if defined _M_X64
-	
+	int a = 5;
 #elif defined _M_IX86 && defined _MSC_VER
 	void* m_memset(void* szBuffer, size_t dwSym, size_t dwLen)
 	{
@@ -73,6 +78,7 @@ namespace alloc
 
 #endif
 
+#if !defined WIN32_VIRTUALALLOC
 	typedef uint8_t BYTE;
 	
 	
@@ -84,13 +90,12 @@ namespace alloc
 	
 	typedef struct list_
 	{		
-		FRAGMENT fragment;
+		FRAGMENT fragment;		
 		LIST_ENTRY(list_) Entries;
 	}LIST, *PLIST;
 
-	typedef struct asd
-	{
-		//PLIST list;
+	typedef struct data
+	{	
 		size_t count = 0;		
 		uintptr_t heap_size = 0;
 	}data_mark;
@@ -103,11 +108,10 @@ namespace alloc
 	
 	void* mem_alloc(uintptr_t bytes)
 	{				
-		assert(bytes <= ALLOCATED_CAPACITY && bytes > 0);				
-		std::cout << data->heap_size << std::endl;
+		assert(bytes <= ALLOCATED_CAPACITY && bytes > 0);						
 		void* ptr_ret = heap + data->heap_size;
 		data->heap_size += (bytes + sizeof(uintptr_t) - 1) / sizeof(uintptr_t);
-		//data->heap_size += bytes;
+		
 		PLIST LFragment = (PLIST)operator new(sizeof(struct list_));		
 		{
 			LFragment->fragment.size = bytes;
@@ -118,43 +122,28 @@ namespace alloc
 		return ptr_ret;
 	}	
 
-
+	
 	void mem_free(void* ptr);
 	void* mem_realloc(void* ptr, size_t new_size)
-	{
-    assert(false && "not implemented\n");
-		size_t size_end = 0;		
-		assert(ptr != NULL);
+	{		
+		void* ptr_new = mem_alloc(new_size);		
+
 		LIST_FOREACH(allocated_fragments, &FragmentsList, Entries)
 		{
 			if (allocated_fragments->fragment.ptr == ptr)
 			{
-				assert(size_end + new_size <= ALLOCATED_CAPACITY);				
 				size_t old_size = allocated_fragments->fragment.size;
-				if (old_size > new_size) 
+				if (old_size > new_size)
 				{
-					printf_s("old_size(%zu) > new_size(%zu)\n", old_size, new_size);
+					printf_s("old_size(%zu) < new_size(%zu)\n", old_size, new_size);
 					return NULL;
 				}
-				void* ptr_new = mem_alloc(new_size);
-								
-#if defined _M_IX86 && defined _MSC_VER
-				m_memcpy(heap, &heap[old_size], old_size);
-				//m_memset(&heap[old_size], 0, new_size - old_size); no need memset in mem_free()
-#else
-				memmove_s(heap, old_size, &heap[old_size], old_size); 
-				//memset(&heap[old_size], 0, 20);//new_size - old_size
-				//memset((void*)heap, 0, 20);//new_size - old_size
-				heap[8] = 2;
-#endif
-
-				mem_free(ptr);
-				return ptr_new;
-			}		
-			size_end += allocated_fragments->fragment.size;
+				
+				memmove_s(ptr_new, old_size, ptr, old_size);
+			}
 		}
-		assert(false && "miss the pointer address\n");
-		return NULL;
+		mem_free(ptr);		
+		return ptr_new;
 	}
 
 	/*RECOMMENDED FREE BLOCK FROM TAIL*/
@@ -205,12 +194,12 @@ namespace alloc
 						&heap[((size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)) + ((size_block + sizeof(uintptr_t) - 1) / sizeof(uintptr_t))],						
 						szf - size_block
 					);
-					memset(&heap[(szf - size_block + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)], 0, size_block);
+					memset(&heap[(szf - size_block + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)], 0, size_block);					
 				}
 				else
-					memset(&heap[(size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)], 0, size_block);
+					memset(&heap[(size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)], 0, size_block);					
 #endif
-				--data->count;				
+				--data->count;
 				
 				return;
 
@@ -239,4 +228,45 @@ namespace alloc
 			printf_s("\tmem_ptr: %p\tsize: %zu\n", allocated_fragments->fragment.ptr, allocated_fragments->fragment.size);			
 		}		
 	}
+
+	#else
+
+#if !defined(_WINDOWS_)
+	#include <Windows.h>
+#endif
+		void* new_region(size_t bytes)
+		{
+			size_t size_bytes = (bytes + sizeof(uintptr_t) - 1)/sizeof(uintptr_t);
+			void* ptr = VirtualAllocEx
+			(
+				GetCurrentProcess(),      /* Allocate in current process address space */
+				NULL,                     /* Unknown position */
+				size_bytes,               /* Bytes to allocate */
+				MEM_COMMIT | MEM_RESERVE, /* Reserve and commit allocated page */
+				PAGE_READWRITE            /* Permissions ( Read/Write )*/
+			);
+			if (ptr == NULL || ptr == INVALID_HANDLE_VALUE)
+				assert(0 && "VirtualAllocEx() failed.");
+	
+			
+			return ptr;
+		}
+	
+		void free_region(void* ptr)
+		{
+			if (ptr == NULL || ptr == INVALID_HANDLE_VALUE)
+				return;
+	
+			BOOL free_result = VirtualFreeEx(
+				GetCurrentProcess(),        /* Deallocate from current process address space */
+				(LPVOID)ptr,                  /* Address to deallocate */
+				0,                          /* Bytes to deallocate ( Unknown, deallocate entire page ) */
+				MEM_RELEASE                 /* Release the page ( And implicitly decommit it ) */
+			);
+	
+			if (FALSE == free_result)
+				assert(0 && "VirtualFreeEx() failed.");
+		}
+	#endif	
+}
 #endif
