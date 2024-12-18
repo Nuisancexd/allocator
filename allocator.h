@@ -15,9 +15,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <ostream>
-#include <iostream>
-#include "queue.h"
 #elif defined _MSC_VER
 
 #else
