@@ -31,7 +31,7 @@
 namespace alloc
 {
 #if defined _M_X64
-	int a = 5;
+	
 #elif defined _M_IX86 && defined _MSC_VER
 	void* m_memset(void* szBuffer, size_t dwSym, size_t dwLen)
 	{
@@ -231,7 +231,7 @@ namespace alloc
 #if !defined(_WINDOWS_)
 	#include <Windows.h>
 #endif
-		void* new_region(size_t bytes)
+		void* wmalloc(size_t bytes)
 		{
 			size_t size_bytes = (bytes + sizeof(uintptr_t) - 1)/sizeof(uintptr_t);
 			void* ptr = VirtualAllocEx
@@ -249,7 +249,7 @@ namespace alloc
 			return ptr;
 		}
 	
-		void free_region(void* ptr)
+		void wmfree(void* ptr)
 		{
 			if (ptr == NULL || ptr == INVALID_HANDLE_VALUE)
 				return;
