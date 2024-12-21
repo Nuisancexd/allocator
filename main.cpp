@@ -234,10 +234,104 @@ void test_free()
 		std::cout << (int)alloc::heap[i] << " ";
 	}
 }
+
+void test()
+{
+	int* ptr1 = (int*)alloc::mem_alloc(BYTES(10));
+	int* ptr3 = (int*)alloc::mem_alloc(BYTES(30));
+	int* ptr2 = (int*)alloc::mem_alloc(BYTES(20));
+	int* ptr4 = (int*)alloc::mem_alloc(BYTES(40));
+
+	for (int i = 0; i < 10; ++i)
+	{
+		ptr1[i] = 1;
+	}
+	for (int i = 0; i < 20; ++i)
+	{
+		ptr2[i] = 2;
+	}
+	for (int i = 0; i < 30; ++i)
+	{
+		ptr3[i] = 3;
+	}
+	for (int i = 0; i < 40; ++i)
+	{
+		ptr4[i] = 4;
+	}
+	printf_s("\ndump heap\n");
+	for (int i = 0; i < 128 + 64 + 32; ++i)
+	{
+		std::cout << (int)alloc::heap[i] << " ";
+	}
+	printf_s("\n");
+	alloc::dump_allocated_fragments();
+	alloc::mem_free(ptr3);
+	alloc::mem_free(ptr2);
+	alloc::dump_freed_fragments();
+	int* ptr_ = (int*)alloc::mem_alloc(BYTES(30));
+	for (int i = 0; i < 30; ++i)
+	{
+		ptr_[i] = 5;
+	}
+	int* ptr__ = (int*)alloc::mem_alloc(BYTES(5));
+	for (int i = 0; i < 5; ++i)
+	{
+		ptr__[i] = 6;
+	}
+	int* ptr_f = (int*)alloc::mem_alloc(BYTES(5));
+	for (int i = 0; i < 5; ++i)
+	{
+		ptr_f[i] = 7;
+	}
+	int* ptr_f_ = (int*)alloc::mem_alloc(BYTES(5));
+	for (int i = 0; i < 5; ++i)
+	{
+		ptr_f_[i] = 9;
+	}
+	alloc::mem_realloc(ptr_f_, BYTES(7));
+	ptr_f_[0] = 999;
+	for (int i = 5; i < 7; ++i)
+	{
+		ptr_f_[i] = 99;
+	}
+	printf_s("\nptr_f_\t");
+	for (int i = 0; i < 7; ++i)
+	{
+		printf_s("%d ", ptr_f_[i]);
+	}
+	alloc::mem_realloc(ptr_f, BYTES(10));
+	for (int i = 5; i < 10; ++i)
+	{
+		ptr_f[i] = 77;
+	}
+	printf_s("\nptr_f\t");
+	for (int i = 0; i < 10; ++i)
+	{
+		printf_s("%d ", ptr_f[i]);
+	}
+	printf_s("\nptr_f_\t");
+	for (int i = 0; i < 7; ++i)
+	{
+		printf_s("%d ", ptr_f_[i]);
+	}
+	printf_s("\ndump heap\n");
+	for (int i = 0; i < 128 + 64 + 32; ++i)
+	{
+		std::cout << (int)alloc::heap[i] << " ";
+	}
+	printf_s("\n");
+	alloc::dump_allocated_fragments();
+	printf_s("\nFREED DUMP\n");
+	alloc::dump_freed_fragments();
+	alloc::mem_full_free();
+}
+
 #endif
 
 int main()
 {
+	alloc::init_alloc();
+	test();
 	std::cout << std::string(30, '-') << "TEST_ALLOC_START" << std::string(30, '-') << std::endl;
 	test_alloc();
 	alloc::mem_full_free();
