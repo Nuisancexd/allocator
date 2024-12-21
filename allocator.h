@@ -22,90 +22,136 @@
 #endif
 
 #ifndef ALLOCATED_CAPACITY
-#define ALLOCATED_CAPACITY 10000
+//#define ALLOCATED_CAPACITY 10000
 #endif
 
 #define BYTES(x) x * sizeof(x)
-
+#define STATIC static
 
 namespace alloc
 {
-#if defined _M_X64
-	
-#elif defined _M_IX86 && defined _MSC_VER
-	void* m_memset(void* szBuffer, size_t dwSym, size_t dwLen)
-	{
-		if (!szBuffer)
+#if !defined WIN32_VIRTUALALLOC		
+	#if defined _M_X64
+
+	#elif defined _M_IX86 && defined _MSC_VER
+		void* m_memset(void* szBuffer, size_t dwSym, size_t dwLen)
 		{
+			if (!szBuffer)
+			{
+				return NULL;
+			}
+	
+			__asm
+			{
+				pushad
+				mov		edi, [szBuffer]
+				mov		ecx, [dwLen]
+				mov		eax, [dwSym]
+				rep		stosb
+				popad
+			}
+	
 			return NULL;
 		}
-
-		__asm
-		{
-			pushad
-			mov		edi, [szBuffer]
-			mov		ecx, [dwLen]
-			mov		eax, [dwSym]
-			rep		stosb
-			popad
-		}
-
-		return NULL;
-	}
-
-	void* m_memcpy(void* szBuf, const void* szStr, int nLen)
+	#endif
+	namespace detail
 	{
-		if (!szBuf || !szStr)
+		typedef struct heap_fragment
 		{
-			return NULL;
-		}
+			void* ptr;
+			size_t size;
+		} FRAGMENT, *PFRAGMENT;
+	
+		typedef struct list_
+		{		
+			FRAGMENT fragment;		
+			LIST_ENTRY(list_) Entries;
+		}LIST, *PLIST;
 
-		__asm
+		typedef struct data
+		{	
+			size_t count = 0;			
+			uintptr_t heap_size = 0;
+			size_t freed_count = 0;
+		}data_mark;
+		
+		typedef struct freed_frag_list
 		{
-			pushad
-			mov		esi, [szStr]
-			mov		edi, [szBuf]
-			mov		ecx, [nLen]
-			rep		movsb
-			popad
-		}
-
-		return NULL;
+			void* ptr;
+			size_t bytes;
+			TAILQ_ENTRY(freed_frag_list) Entries;
+		}FREED, *PFREED;
+		
+		
+		BSD_LIST_HEAD(, list_) FragmentsList;
+		TAILQ_HEAD(, freed_frag_list) FreedsList;
+		PLIST allocated_fragments = (PLIST)operator new(sizeof(struct list_));
+		PFREED freed_fragments = (PFREED)operator new(sizeof(struct freed_frag_list));
+		data_mark* data = new data_mark;
 	}
-
-#endif
-
-#if !defined WIN32_VIRTUALALLOC
-	typedef uint8_t BYTE;
-	
-	
-	typedef struct heap_fragment
-	{
-		void* ptr;
-		size_t size;
-	} FRAGMENT, *PFRAGMENT;
-	
-	typedef struct list_
-	{		
-		FRAGMENT fragment;		
-		LIST_ENTRY(list_) Entries;
-	}LIST, *PLIST;
-
-	typedef struct data
-	{	
-		size_t count = 0;		
-		uintptr_t heap_size = 0;
-	}data_mark;
-	
-	BSD_LIST_HEAD(, list_) FragmentsList;
-	PLIST allocated_fragments = (PLIST)operator new(sizeof(struct list_));
-	data_mark* data = new data_mark;
 	uintptr_t heap[ALLOCATED_CAPACITY] = { 0 };
+	
+	#define det using namespace detail
 	
 	
 	void* mem_alloc(uintptr_t bytes)
-	{				
-		assert(bytes <= ALLOCATED_CAPACITY && bytes > 0);						
+	{
+		det;		
+		assert(data->heap_size + bytes <= ALLOCATED_CAPACITY && bytes > 0);
+
+		TAILQ_FOREACH(freed_fragments, &FreedsList, Entries)
+		{
+			if (freed_fragments->bytes >= bytes)
+			{				
+				void* ptr_freed = freed_fragments->ptr;
+				PLIST LFragment = (PLIST)operator new(sizeof(struct list_));
+				{
+					LFragment->fragment.size = bytes;
+					LFragment->fragment.ptr = ptr_freed;
+					++data->count;					
+				}
+				LIST_INSERT_HEAD(&FragmentsList, LFragment, Entries);
+				
+				
+				/* Fragmentation */
+				if (freed_fragments->bytes - bytes > 0)
+				{
+					freed_fragments->bytes -= bytes;					
+					auto pos = [&ptr_freed]()
+						{
+							size_t i = 0;
+							for (; i < data->heap_size; ++i)
+							{
+								if (&heap[i] == ptr_freed)
+									return i;
+							}
+							/*size_t i = 0;
+							size_t j = data->heap_size;
+							for (; i < data->heap_size && j != i; ++i, --j)
+							{
+								if (&heap[i] == ptr_freed)
+								{
+									return i;
+								}
+								else if (&heap[j] == ptr_freed)
+								{
+									return j;
+								}
+							}*/
+							return static_cast<size_t>(0);
+						};
+
+					freed_fragments->ptr = heap + pos() + (bytes + sizeof(uintptr_t) - 1) / sizeof(uintptr_t);
+				}
+				else
+				{
+					TAILQ_REMOVE(&FreedsList, freed_fragments, Entries);
+					--data->freed_count;
+				}
+				return ptr_freed;
+			}
+		}
+
 		void* ptr_ret = heap + data->heap_size;
 		data->heap_size += (bytes + sizeof(uintptr_t) - 1) / sizeof(uintptr_t);
 		
@@ -115,21 +161,23 @@ namespace alloc
 			LFragment->fragment.ptr = ptr_ret;				
 			data->count += 1;		
 		}		
-		LIST_INSERT_HEAD(&FragmentsList, LFragment, Entries);
+		LIST_INSERT_HEAD(&FragmentsList, LFragment, Entries);		
 		return ptr_ret;
 	}	
 
 	
-	void mem_free(void* ptr);
+	/*	not safe func	*/
 	void* mem_realloc(void* ptr, size_t new_size)
 	{		
-		void* ptr_new = mem_alloc(new_size);		
-
+		assert(false && "not safe, not implemented yet");
+		det;
+		void* ptr_new = NULL;
 		LIST_FOREACH(allocated_fragments, &FragmentsList, Entries)
 		{
 			if (allocated_fragments->fragment.ptr == ptr)
 			{
 				size_t old_size = allocated_fragments->fragment.size;
+				ptr_new = mem_alloc(new_size);
 				if (old_size > new_size)
 				{
 					printf_s("old_size(%zu) < new_size(%zu)\n", old_size, new_size);
@@ -139,91 +187,97 @@ namespace alloc
 				memmove_s(ptr_new, old_size, ptr, old_size);
 			}
 		}
-		mem_free(ptr);		
+		
 		return ptr_new;
 	}
 
 	/*RECOMMENDED FREE BLOCK FROM TAIL*/
 	void mem_free(void* ptr)
 	{
-		assert(ptr != NULL);
-		
-		char check = 0;
-		size_t szf = 0;
-		LIST_FOREACH(allocated_fragments, &FragmentsList, Entries)
+		det;
+		allocated_fragments = LIST_FIRST(&FragmentsList);
+		if (ptr == allocated_fragments->fragment.ptr)
 		{
-			check += 1;
-			szf += allocated_fragments->fragment.size;
-			if (allocated_fragments->fragment.ptr == ptr)
-			{				
-				size_t size_hstart = 0;
-				size_t size_block = allocated_fragments->fragment.size;				
-				data->heap_size -= (size_block + sizeof(uintptr_t) - 1)/ sizeof(uintptr_t);
-				LIST_REMOVE(allocated_fragments, Entries);
-				allocated_fragments = LIST_NEXT(allocated_fragments, Entries);
-				for (; allocated_fragments; allocated_fragments = LIST_NEXT(allocated_fragments, Entries))	/*get size*/
-				{
-					size_hstart += allocated_fragments->fragment.size;
-					szf += allocated_fragments->fragment.size;
-				}
-				
+			
 #if defined _M_IX86 && defined _MSC_VER
-				if (check != 1)
-				{
-					m_memcpy
-					(
-						&heap[(size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)],
-						&heap[((size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)) + ((size_block + sizeof(uintptr_t) - 1) / sizeof(uintptr_t))],
-						szf - size_block
-					);
-					m_memset(&heap[(szf - size_block + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)], 0, size_block);
-				}
-				else
-					m_memset(&heap[(size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)], 0, size_block);
-				
-#else
-				if (check != 1)
-				{
-					memmove_s
-					(
-						&heap[(size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)],
-						szf - size_block,						
-						&heap[((size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)) + ((size_block + sizeof(uintptr_t) - 1) / sizeof(uintptr_t))],						
-						szf - size_block
-					);
-					memset(&heap[(szf - size_block + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)], 0, size_block);					
-				}
-				else
-					memset(&heap[(size_hstart + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)], 0, size_block);					
+			m_memset(allocated_fragments->fragment.ptr, 0, allocated_fragments->fragment.size);
+#else			
+			memset(allocated_fragments->fragment.ptr, 0, allocated_fragments->fragment.size);
 #endif
-				--data->count;
-				
-				return;
-
-			}			
+			data->heap_size -= (allocated_fragments->fragment.size + sizeof(uintptr_t) - 1) / sizeof(uintptr_t);
+			LIST_REMOVE(allocated_fragments, Entries);
+			return;
 		}
-		
+
+		for (; allocated_fragments; allocated_fragments = LIST_NEXT(allocated_fragments, Entries))
+		{
+			if (ptr == allocated_fragments->fragment.ptr)
+			{
+				PFREED FFragment = (PFREED) operator new(sizeof(struct freed_frag_list));				
+				{					
+					FFragment->bytes = allocated_fragments->fragment.size;
+					FFragment->ptr = allocated_fragments->fragment.ptr;
+					--data->count;
+					++data->freed_count;
+				}
+				
+				TAILQ_INSERT_TAIL(&FreedsList, FFragment, Entries);				
+				memset(allocated_fragments->fragment.ptr, 0, allocated_fragments->fragment.size);
+				LIST_REMOVE(allocated_fragments, Entries);		
+				return;
+			}
+		}
+
 		assert(false && "miss the pointer address\n");
 	}
 
+
 	void mem_full_free()
 	{		
+		det;
 		while (LIST_FIRST(&FragmentsList) != NULL)
 		{
 			LIST_REMOVE(LIST_FIRST(&FragmentsList), Entries);
 		}
+		while (TAILQ_FIRST(&FreedsList) != NULL)
+		{
+			TAILQ_REMOVE(&FreedsList, TAILQ_FIRST(&FreedsList), Entries);
+		}
 		data->count = 0;
 		data->heap_size = 0;
+		data->freed_count = 0;		
+#if defined _M_IX86 && defined _MSC_VER
+		m_memset(heap, 0, ALLOCATED_CAPACITY);
+#else
 		memset(heap, 0, ALLOCATED_CAPACITY);
+#endif
 	}
-
+	
 	void dump_allocated_fragments()
 	{			
+		det;
 		printf_s("Allocated fragments of %zu\n", data->count);
 		LIST_FOREACH(allocated_fragments, &FragmentsList, Entries)
 		{
 			printf_s("\tmem_ptr: %p\tsize: %zu\n", allocated_fragments->fragment.ptr, allocated_fragments->fragment.size);			
 		}		
+	}
+
+	void dump_freed_fragments()
+	{
+		det;
+		printf_s("Freed fragments of %zu\n", data->freed_count);
+		TAILQ_FOREACH(freed_fragments, &FreedsList, Entries)
+		{
+			printf_s("\tmem_ptr: %p\tbytes: %zu\n", freed_fragments->ptr, freed_fragments->bytes);
+		}
+	}
+
+	void init_alloc()
+	{		
+		det;
+		TAILQ_INIT(&FreedsList);
+		LIST_INIT(&FragmentsList);
 	}
 
 	#else
