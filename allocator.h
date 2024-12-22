@@ -166,28 +166,26 @@ namespace alloc
 	}	
 
 	
-	/*	not safe func	*/
+	void mem_free(void* ptr);
 	void* mem_realloc(void* ptr, size_t new_size)
-	{		
-		assert(false && "not safe, not implemented yet");
+	{				
 		det;
 		void* ptr_new = NULL;
 		LIST_FOREACH(allocated_fragments, &FragmentsList, Entries)
 		{
 			if (allocated_fragments->fragment.ptr == ptr)
 			{
-				size_t old_size = allocated_fragments->fragment.size;
-				ptr_new = mem_alloc(new_size);
+				size_t old_size = allocated_fragments->fragment.size;				
 				if (old_size > new_size)
 				{
-					printf_s("old_size(%zu) < new_size(%zu)\n", old_size, new_size);
-					return NULL;
+					printf_s("old_size(%zu) < new_size(%zu)\n", old_size, new_size);					
+					return ptr;
 				}
-				
+				ptr_new = mem_alloc(new_size);
 				memmove_s(ptr_new, old_size, ptr, old_size);
 			}
 		}
-		
+		mem_free(ptr);
 		return ptr_new;
 	}
 
