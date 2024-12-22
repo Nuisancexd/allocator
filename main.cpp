@@ -288,7 +288,8 @@ void test()
 	{
 		ptr_f_[i] = 9;
 	}
-	alloc::mem_realloc(ptr_f_, BYTES(7));
+	/*	REALLOC	*/
+	ptr_f_ = (int*)alloc::mem_realloc(ptr_f_, BYTES(7));
 	ptr_f_[0] = 999;
 	for (int i = 5; i < 7; ++i)
 	{
@@ -299,7 +300,7 @@ void test()
 	{
 		printf_s("%d ", ptr_f_[i]);
 	}
-	alloc::mem_realloc(ptr_f, BYTES(10));
+	ptr_f = (int*)alloc::mem_realloc(ptr_f, BYTES(10));
 	for (int i = 5; i < 10; ++i)
 	{
 		ptr_f[i] = 77;
